@@ -4,6 +4,7 @@ library(mgcv)
 library(glmnet)
 library(caret)
 
+
 atex_dat <- read.csv("data/clean/Ah_2000-2024OCT_annot.csv") %>%
   mutate(presence = as.integer(Ah.Status == "Present")) %>%
   mutate(Longitude = ifelse(Longitude > 0, (-1)*Longitude, Longitude))
