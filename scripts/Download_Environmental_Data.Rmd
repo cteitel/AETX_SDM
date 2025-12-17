@@ -1,0 +1,117 @@
+---
+title: "VM Distribution 2.0"
+author: "Wesley Gerrin"
+date: "10/5/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load needed libraries according to code on website below
+```{r}
+library(sf)
+library(terra)
+library(ncdf4)
+library(maps)
+library(foreach)
+library(doParallel)
+#install.packages("rSDM", repos = c("https://pakillo.r-universe.dev", "https://cloud.r-project.org"))
+library(rSDM)
+library(dplyr)
+```
+
+Load in data from EarthEnv Project: Near-global environmental information for freshwater ecosystems in 1km resolution
+Website: http://www.earthenv.org/streams
+Example code: https://github.com/domisch/stream_layers/blob/master/crop_netCDF.R
+Journal Article Reference: https://www.nature.com/articles/sdata201573
+https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0247876
+```{r}
+options(timeout = 1000)
+download.file("http://data.earthenv.org/streams/landcover_average.nc", "data/spatial/landcover_average.nc", mode = "wb")
+download.file("http://data.earthenv.org/streams/hydroclim_average+sum.nc", "data/spatial/hydroclim_average+sum.nc", mode = "wb")
+download.file("http://data.earthenv.org/streams/soil_average.nc", "data/spatial/soil_average.nc", mode = "wb")
+download.file("http://data.earthenv.org/streams/elevation.nc", "data/spatial/elevation.nc", mode = "wb")
+download.file("http://data.earthenv.org/streams/slope.nc", "data/spatial/slope.nc", mode = "wb")
+```
+
+Create a raster brick of different sets of variables
+```{r}
+lc_avg<-rast("data/spatial/landcover_average.nc")
+clim_avg<-rast("data/spatial/hydroclim_average+sum.nc")
+soil_avg<-rast("data/spatial/soil_average.nc")
+elev<-rast("data/spatial/elevation.nc")
+slope<-rast("data/spatial/slope.nc")
+```
+
+```{r}
+lc_avg<-project(lc_avg, "epsg:4326")
+```
+
+
+Add layer names to the raster bricks
+```{r}
+names(lc_avg) <- paste(c("lc_avg"), sprintf("%02d", seq(1:12)), sep="_")
+names(clim_avg) <- paste(c("clim_avg"), sprintf("%02d", seq(1:19)), sep="_")
+names(soil_avg) <- paste(c("soil_avg"), sprintf("%02d", seq(1:10)), sep="_")
+names(elev) <- paste(c("elev"), sprintf("%02d", seq(1:4)), sep="_")
+names(slope) <- paste(c("slope"), sprintf("%02d", seq(1:4)), sep="_")
+```
+
+Create a shapefile to use for extent of environmental layers
+```{r}
+aetx_dat <- read.csv("data/clean/Ah_2000-2024OCT_annot.csv") %>%
+  mutate(Longitude = ifelse(Longitude > 0, (-1)*Longitude, Longitude))
+aetx_vect <- vect(aetx_dat, geom = c("Longitude","Latitude"), 
+                  crs = "epsg:4326", keepgeom = T)
+
+ext<-ext(aetx_vect)
+```
+
+Clipping the raster brick using parallel processing
+Create a cluster object
+```{r}
+cl <- makePSOCKcluster(detectCores()-2)
+registerDoParallel(cl)
+```
+
+Clip the layers in the raster bricks to the extent of the study area
+In this case, our study area inlcudes the HUC8 watersheds that surround locations assessed for A. hydrillicola (plotted above).
+```{r}
+lc_avg <- crop(lc_avg, ext)
+clim_avg <- crop(clim_avg, ext)
+soil_avg <- crop(soil_avg, ext)
+elev <- crop(elev, ext)
+slope <- crop(slope, ext)
+```
+
+Run tool to snap points to the nearest cell in the environmental data raster. This will move some of the points.
+May also export to csv and import to ArcGIS to make sure points did not move somewhere they don't need to be.
+rSDM package
+```{r}
+snapped_points <- points2nearestcell(aetx_vect, ras = lc_avg[[1]], move = T) 
+snapped_points$ID <- 1:nrow(snapped_points)
+```
+
+Extract values from rasters to snapped points and combine into the same data frame
+```{r}
+lc_data <- extract(lc_avg, snapped_points)
+clim_data <- extract(clim_avg, snapped_points)
+soil_data <- extract(soil_avg, snapped_points)
+elev_data <- extract(elev, snapped_points)
+slope_data <- extract(slope, snapped_points)
+
+all_data <- left_join(lc_data, clim_data) %>%
+  left_join(soil_data) %>%
+  left_join(elev_data) %>%
+  left_join(slope_data)
+
+all_data <- as.data.frame(snapped_points) %>% left_join(all_data)
+```
+
+Export to CSV file
+```{r}
+write.csv(all_data, "data/clean/extracted_data.csv", row.names=F)
+```
+
