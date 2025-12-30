@@ -1,0 +1,73 @@
+---
+title: "Correlation Analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+library(corrplot)
+library(reshape2)
+```
+
+```{r}
+data <- read.csv("data/clean/extracted_data.csv")
+var_names <- read.csv("data/spatial/earthenv_data_variables.csv")
+```
+
+```{r}
+cor.matrix <- data %>%
+  select(contains("lc_avg"), contains("clim_avg"), contains("soil_avg"), contains("elev"), contains("slope")) %>%
+  select(sort(names(.))) %>%
+  as.matrix() %>%
+  cor(method = "pearson") 
+```
+
+```{r}
+get_upper_tri <- function(cor.matrix){
+    cor.matrix[upper.tri(cor.matrix)]  <-  NA
+    diag(cor.matrix) <- NA
+    return(cor.matrix)
+}
+
+cor.matrix  <-  get_upper_tri(cor.matrix)
+```
+
+```{r}
+melted.cormat <- melt(cor.matrix, na.rm = T) 
+melted.cormat <- melted.cormat %>%
+  left_join(select(var_names, variable_code, variable_explanation), by = c("Var1" = "variable_code")) %>%
+  left_join(select(var_names, variable_code, variable_explanation), by = c("Var2" = "variable_code"), suffix = c("1","2"))
+```
+
+```{r}
+var_types1 <- bind_cols(varname = sort(rownames(cor.matrix)),
+                        vartype = str_split_fixed(sort(rownames(cor.matrix)), "_", 2)[,1]) %>%
+  mutate(num = 1:nrow(.)) %>%
+  group_by(vartype) %>%
+  reframe(start = min(num) - 0.5, end = max(num)  +  0.5)
+
+tiff("figures/Correlation_Matrix.tif", units = "in", width = 12, height = 12, res=600)
+ggplot(melted.cormat, aes(Var1, Var2, fill=value)) + 
+  geom_tile(color = "white") + 
+  geom_tile(data = filter(melted.cormat, abs(value) > 0.7), fill = NA, color = "black", linewidth = 0.5) +
+  geom_text(aes(Var1, Var2, label = round(value, digits = 1)), color = "black", size = 3)  + 
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", 
+   midpoint = 0, limit = c(-1,1), space = "Lab", 
+   name="Pearson\nCorrelation\nCoefficient") + 
+  theme_classic() + 
+   theme(axis.text.x = element_text(angle = 45, vjust = 1, 
+   hjust = 1)) + 
+  coord_fixed() + 
+  theme(
+  axis.title = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = c(0.5, 0.7),
+  legend.direction = "horizontal") + 
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+dev.off()
+```

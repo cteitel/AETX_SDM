@@ -34,6 +34,21 @@ download.file("http://data.earthenv.org/streams/hydroclim_average+sum.nc", "data
 download.file("http://data.earthenv.org/streams/soil_average.nc", "data/spatial/soil_average.nc", mode = "wb")
 download.file("http://data.earthenv.org/streams/elevation.nc", "data/spatial/elevation.nc", mode = "wb")
 download.file("http://data.earthenv.org/streams/slope.nc", "data/spatial/slope.nc", mode = "wb")
+download.file("https://data.earthenv.org/streams/ReadMe.txt", "data/spatial/ReadMe.txt", mode = "wb")
+```
+
+Use Readme to create a table of variable names
+```{r}
+var_names <- read_delim("data/spatial/ReadMe.txt", delim = "|", skip = 94,
+                        col_names = TRUE)
+var_names <- select(var_names, -1, -ncol(var_names)) %>%
+  rename_all(trimws) %>%
+  rename_all(str_replace_all, " ", "_") %>%
+  rename_all(str_to_lower) %>%
+  rename(file_name = `netcdf_file_/_variable_name`) %>%
+  filter(!str_detect(variable_code, "=")) %>%
+  mutate(across(-unit, trimws))
+write.csv(var_names, "data/spatial/earthenv_data_variables.csv", row.names = F)
 ```
 
 Create a raster brick of different sets of variables
@@ -52,11 +67,11 @@ lc_avg<-project(lc_avg, "epsg:4326")
 
 Add layer names to the raster bricks
 ```{r}
-names(lc_avg) <- paste(c("lc_avg"), sprintf("%02d", seq(1:12)), sep="_")
-names(clim_avg) <- paste(c("clim_avg"), sprintf("%02d", seq(1:19)), sep="_")
-names(soil_avg) <- paste(c("soil_avg"), sprintf("%02d", seq(1:10)), sep="_")
-names(elev) <- paste(c("elev"), sprintf("%02d", seq(1:4)), sep="_")
-names(slope) <- paste(c("slope"), sprintf("%02d", seq(1:4)), sep="_")
+names(lc_avg) <- var_names$variable_code[var_names$file_name == "landcover_average.nc"]
+names(clim_avg) <- var_names$variable_code[var_names$file_name == "hydroclim_average+sum.nc"]
+names(soil_avg) <- var_names$variable_code[var_names$file_name == "soil_average.nc"]
+names(elev) <- var_names$variable_code[var_names$file_name == "elevation.nc"]
+names(slope) <- var_names$variable_code[var_names$file_name == "slope.nc"]
 ```
 
 Create a shapefile to use for extent of environmental layers
