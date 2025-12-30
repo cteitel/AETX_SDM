@@ -70,4 +70,7 @@ ggplot(melted.cormat, aes(Var1, Var2, fill=value)) +
   guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
                 title.position = "top", title.hjust = 0.5))
 dev.off()
+
+# export pairwise corrs
+write.csv(melted.cormat, "data/clean/envdata_correlations.csv", row.names = F)
 ```
